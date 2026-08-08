@@ -4,4 +4,6 @@ __pycache__/
 clash.yaml
 shadowrocket.conf
 clash.js
+traffic-router.js
+traffic-router.conf
 rules-source.local.json

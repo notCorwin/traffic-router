@@ -1,4 +1,5 @@
 {
+  "name": "Traffic Router",
   "version": 1,
   "targets": {
     "DIRECT": "DIRECT",

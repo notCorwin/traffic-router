@@ -3,8 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="在浏览器中管理分流策略，生成 Mihomo 与 Shadowrocket 配置" />
-    <title>Mihomo / Shadowrocket 分流策略管理</title>
+    <meta name="description" content="Traffic Router：在浏览器中管理分流策略，生成 Mihomo 与 Shadowrocket 配置" />
+    <meta name="application-name" content="Traffic Router" />
+    <title>Traffic Router</title>
     <!-- Safari 在 /repo（无尾斜杠）时相对路径会解析到站点根；先钉死目录 -->
     <script>
       (() => {
@@ -23,13 +24,13 @@
   <body>
     <main class="shell">
       <header>
-        <p class="eyebrow">STATIC · CLIENT-SIDE</p>
-        <h1>Mihomo / Shadowrocket<br /><span>分流策略管理</span></h1>
-        <p class="intro">维护一份分流策略，同时生成 Mihomo 与 Shadowrocket 配置。所有处理都在浏览器本地完成，不会上传规则。</p>
+        <p class="eyebrow">TRAFFIC ROUTER · STATIC · CLIENT-SIDE</p>
+        <h1><span class="brand-name">Traffic Router</span><br /><span class="product-line">分流策略管理</span></h1>
+        <p class="intro">Traffic Router 在浏览器中维护一份分流策略，同时生成 Mihomo 与 Shadowrocket 配置。所有处理都在浏览器本地完成，不会上传规则。</p>
       </header>
 
       <section id="generator" class="generator-card">
-        <div class="generator-head"><div><h2>内置分流策略</h2><p>选择要启用的服务分类，生成器会使用内置节点组和规则模板。</p></div><button id="generate-button" type="button">生成配置 →</button></div><p id="generator-status" class="generator-status" role="status" aria-live="polite"></p>
+        <div class="generator-head"><div><h2>Traffic Router 分流策略</h2><p>选择要启用的服务分类，生成器会使用内置节点组和规则模板。</p></div><button id="generate-button" type="button">生成配置 →</button></div><p id="generator-status" class="generator-status" role="status" aria-live="polite"></p>
         <div id="route-options" class="route-options"></div><div id="base-rule-section" class="base-rule-section hidden"><h3 class="subheading">基础规则</h3><p class="section-help">局域网、保留地址和特殊网段固定直连，建议保持启用；下方列出当前包含的地址，可点编辑维护列表。</p><div id="base-rule-options" class="route-options base-rule-options"></div></div><div id="ipv4-rule-section" class="base-rule-section hidden"><h3 class="subheading">IPv4 直连规则</h3><p class="section-help">所有 IPv4 地址固定直连，与局域网直连规则分开维护；建议保持启用。</p><div id="ipv4-rule-options" class="route-options base-rule-options"></div></div><button id="add-route" class="add-group" type="button">＋ 增加分流策略组</button><h3 class="subheading">独立网址</h3><p class="section-help">域名或 IP/CIDR 不属于策略组时，在此逐条分配节点组。</p><div id="standalone-options" class="standalone-options"></div><button id="add-standalone" class="add-group" type="button">＋ 增加独立网址</button><h3 class="subheading">GeoIP 分流</h3><p class="section-help">选择国家 / 地区代码，对应分配到指定节点组。</p><div id="geoip-options" class="standalone-options"></div><button id="add-geoip" class="add-group" type="button">＋ 增加 GeoIP 分流</button>
         <details open><summary>节点组（可编辑）</summary><div class="shared-settings"><label><span>统一测速间隔（秒）</span><input id="group-interval" type="number" min="0" value="30"><small>所有节点组多久重新测速一次</small></label><label><span>统一容差（毫秒）</span><input id="group-tolerance" type="number" min="0" value="10"><small>所有节点组避免频繁切换的延迟差</small></label></div><div id="group-options" class="group-options"></div><button id="add-group" class="add-group" type="button">＋ 增加节点组</button></details>
         <details open class="dns-settings"><summary>DNS</summary><p class="section-help">代理域名和直连域名分别用不同的 DNS，日常只需维护下面两份服务器列表。</p><div id="dns-options" class="dns-options"></div></details>
@@ -48,7 +49,7 @@
         </div>
       </section>
 
-      <footer><span id="summary">—</span><a href="https://github.com/notCorwin/clashjs2shadowrocket" target="_blank" rel="noreferrer">项目源码 ↗</a></footer>
+      <footer><span id="summary">—</span><a href="https://github.com/notCorwin/traffic-router" target="_blank" rel="noreferrer">Traffic Router 源码 ↗</a></footer>
     </main>
     <script src="app.js"></script>
   </body>

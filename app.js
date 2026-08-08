@@ -15,11 +15,13 @@ function pageDir() {
 }
 const assetUrl = (name) => (typeof location === "undefined" ? name : new URL(name, `${location.origin}${pageDir()}`).href);
 let source = null;
-let outputType = "clash";
+const initialOutput = typeof location !== "undefined" && new URLSearchParams(location.search || "").get("output");
+let outputType = initialOutput === "shadowrocket" ? "shadowrocket" : "clash";
 let flushGenerator = null;
 const LAN_ROUTE = "局域网直连";
 const IPV4_ROUTE = "IPv4直连";
 const routeDescriptions = { Apple: "Apple 服务直连", AI: "ChatGPT、Gemini、Claude、Grok、Cursor、Copilot 等 AI 服务", LINE: "LINE 服务", Netflix: "Netflix 与 Fast.com", YouTube: "YouTube 视频服务", TikTok: "TikTok 短视频服务", Google: "Google 服务", GitHub: "GitHub 与资源域名", "局域网直连": "局域网、保留地址与特殊网段", "IPv4直连": "所有 IPv4 地址固定直连" };
+const formatNumber = (value) => new Intl.NumberFormat("zh-CN").format(value);
 // 国外 DoH 用 IP，避免解析 DoH 域名时再被污染。
 // 节点域名和直连域名使用系统 DNS，不额外依赖国内 DoH。
 const defaultOverseasDns = ["https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query"];
@@ -110,7 +112,7 @@ function routeRuleEntries(data, route) {
 
 function ruleRow(kind, value, label) {
   const options = ruleKinds.map((item) => `<option ${item === kind ? "selected" : ""}>${item}</option>`).join("");
-  return `<div class="drawer-item drawer-item-plain"><select aria-label="规则类型">${options}</select><input aria-label="${escapeHtml(label)}" value="${escapeHtml(value)}"></div>`;
+  return `<div class="drawer-item drawer-item-plain"><select name="rule-kind" aria-label="规则类型">${options}</select><input name="rule-value" aria-label="${escapeHtml(label)}" value="${escapeHtml(value)}" autocomplete="off" spellcheck="false"></div>`;
 }
 
 function ruleGroupName(route, entry) {
@@ -287,18 +289,56 @@ function validate(data) {
   if (!Array.isArray(dns.host_servers)) throw new Error("shadowrocket_dns.host_servers 配置无效");
 }
 
+function clearValidationErrors() {
+  document.querySelectorAll("[data-validation-error]").forEach((error) => error.remove());
+  document.querySelectorAll("[data-validation-field]").forEach((field) => {
+    field.removeAttribute("aria-invalid");
+    field.removeAttribute("aria-describedby");
+    delete field.dataset.validationField;
+  });
+}
+
+function focusValidationField(message) {
+  const selectors = message.includes("独立网址") ? ["[data-standalone-name]", "[data-standalone-domain]"]
+    : message.includes("GeoIP") ? ["[data-geoip-code]", "[data-rule-target]"]
+      : message.includes("节点组") || message.includes("正则") || message.includes("测速") ? ["[data-display]", "[data-field=pattern]", "[data-field=url]", "#group-interval"]
+        : message.includes("DNS") || message.includes("mihomo_dns") ? ["#overseas-dns-servers", "#domestic-dns-servers"]
+          : ["[data-target-route]", "[data-standalone-domain]", "#group-interval"];
+  const field = selectors.map((selector) => document.querySelector(selector)).find(Boolean);
+  if (!field) return generatorStatusEl.focus({ preventScroll: true });
+  const error = document.createElement("span");
+  const id = `validation-error-${Date.now()}`;
+  error.id = id;
+  error.className = "field-error";
+  error.dataset.validationError = "true";
+  error.textContent = message;
+  field.insertAdjacentElement("afterend", error);
+  field.setAttribute("aria-invalid", "true");
+  field.setAttribute("aria-describedby", id);
+  field.dataset.validationField = "true";
+  field.focus({ preventScroll: true });
+}
+
 function render() {
+  clearValidationErrors();
   try {
     if (!source) throw new Error("规则源尚未加载");
     validate(source);
     outputEl.value = outputType === "clash" ? renderClash(source) : renderShadowrocket(source);
     const count = rules(source, "MATCH").length;
     const enabled = source.routes.filter((route) => route.enabled !== false).length;
-    summaryEl.textContent = `${count} 条规则 · ${enabled} 个策略组 · ${(source.standalone_urls || []).length} 个独立网址 · ${(source.standalone_rules || []).length} 个 GeoIP · 浏览器本地生成`;
+    summaryEl.textContent = `${formatNumber(count)} 条规则 · ${formatNumber(enabled)} 个策略组 · ${formatNumber((source.standalone_urls || []).length)} 个独立网址 · ${formatNumber((source.standalone_rules || []).length)} 个 GeoIP · 浏览器本地生成`;
     generatorStatusEl.textContent = "规则源校验通过"; generatorStatusEl.className = "generator-status";
     outputStatusEl.textContent = "";
     return true;
-  } catch (error) { generatorStatusEl.textContent = error.message; generatorStatusEl.className = "generator-status error"; summaryEl.textContent = "规则源无效"; outputEl.value = ""; return false; }
+  } catch (error) {
+    generatorStatusEl.textContent = error.message;
+    generatorStatusEl.className = "generator-status error";
+    summaryEl.textContent = "规则源无效";
+    outputEl.value = "";
+    focusValidationField(error.message);
+    return false;
+  }
 }
 
 async function loadDefault() {
@@ -309,11 +349,13 @@ async function loadDefault() {
     source = await response.json();
     validate(source);
     setupGenerator(source);
-    generatorStatusEl.textContent = "";
+    generatorStatusEl.textContent = "规则源已加载，可开始编辑";
     generatorStatusEl.className = "generator-status";
+    summaryEl.textContent = "规则源已加载 · 可开始编辑";
   } catch (error) {
     generatorStatusEl.textContent = `无法加载 rules-source.json：${error.message}`;
     generatorStatusEl.className = "generator-status error";
+    summaryEl.textContent = "规则源加载失败";
   }
 }
 
@@ -332,32 +374,57 @@ function setupGenerator(data) {
   const isLanRoute = (route) => route.name === LAN_ROUTE;
   const isIpv4Route = (route) => route.name === IPV4_ROUTE;
   const isFixedDirectRoute = (route) => isLanRoute(route) || isIpv4Route(route);
+  const generatorForm = document.querySelector("#generator");
+  const pageSections = [generatorForm, document.querySelector("#results"), document.querySelector("footer")].filter(Boolean);
+  const setPageInert = (inert) => pageSections.forEach((section) => { section.inert = inert; });
+  const confirmRemoval = (label) => typeof window === "undefined" || window.confirm(`确认删除${label}？`);
+  const emptyState = (message) => `<p class="empty-state" role="status">${message}</p>`;
+  let dirty = false;
+  const markDirty = () => { dirty = true; };
+  generatorForm.addEventListener("input", markDirty);
+  generatorForm.addEventListener("change", markDirty);
+  drawer.addEventListener("input", markDirty);
+  drawer.addEventListener("change", markDirty);
+  generatorForm.addEventListener("click", (event) => { if (event.target.closest("#add-route, #add-standalone, #add-geoip, #add-group")) markDirty(); });
+  window.addEventListener("beforeunload", (event) => {
+    if (!dirty) return;
+    event.preventDefault();
+    event.returnValue = "";
+  });
   const renderRoutes = () => {
-    const enabledBox = (route, index) => `<input type="checkbox" aria-label="启用 ${escapeHtml(route.name)}" data-route="${index}" ${route.enabled !== false ? "checked" : ""}>`;
-    const targetSelect = (selected, label, attribute, index) => `<select ${attribute}="${index}" aria-label="${escapeHtml(label)}">${Object.entries(data.targets).map(([key, name]) => `<option value="${escapeHtml(key)}" ${selected === key ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}</select>`;
-    const actions = (index, editLabel) => `<div class="route-actions"><button type="button" class="edit-domains" data-edit-route="${index}">${editLabel}</button><button type="button" class="remove-route" data-remove-route="${index}">删除</button></div>`;
+    const enabledBox = (route, index, badge = "") => `<label class="route-toggle"><input type="checkbox" name="route-enabled-${index}" aria-label="启用 ${escapeHtml(route.name)}" data-route="${index}" ${route.enabled !== false ? "checked" : ""}><strong>${escapeHtml(route.name)}</strong>${badge}</label>`;
+    const targetSelect = (selected, label, attribute, index) => `<select name="route-target-${index}" ${attribute}="${index}" aria-label="${escapeHtml(label)}">${Object.entries(data.targets).map(([key, name]) => `<option value="${escapeHtml(key)}" ${selected === key ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}</select>`;
+    const actions = (route, index, editLabel) => `<div class="route-actions"><button type="button" class="edit-domains" data-edit-route="${index}" aria-controls="domain-drawer" aria-haspopup="dialog" aria-expanded="false">${editLabel}</button><button type="button" class="remove-route" data-remove-route="${index}" aria-label="删除分流策略组 ${escapeHtml(route.name)}">删除</button></div>`;
     const renderRoute = (route, index) => {
       const count = routeRuleEntries(data, route).length;
-      return `<div class="route-option"><div>${enabledBox(route, index)}<strong>${escapeHtml(route.name)}</strong></div><em>${routeDescriptions[route.name] || "自定义分流规则"} · ${count} 条匹配规则</em>${targetSelect(route.target, `${route.name} 导向节点组`, "data-target-route", index)}${actions(index, "编辑规则列表")}</div>`;
+      return `<div class="route-option">${enabledBox(route, index)}<em>${routeDescriptions[route.name] || "自定义分流规则"} · ${formatNumber(count)} 条匹配规则</em>${targetSelect(route.target, `${route.name} 导向节点组`, "data-target-route", index)}${actions(route, index, "编辑规则列表…")}</div>`;
     };
     const renderBaseRoute = (route, index) => {
       const entries = routeRuleEntries(data, route);
       const list = entries.length
         ? `<ul class="base-rule-list">${entries.map(({ kind, value }) => `<li><code>${escapeHtml(value)}</code><small>${escapeHtml(kind)}</small></li>`).join("")}</ul>`
         : `<p class="base-rule-empty">暂无地址</p>`;
-      return `<div class="route-option base-route"><div>${enabledBox(route, index)}<strong>${escapeHtml(route.name)}</strong><span class="base-route-badge">固定直连</span></div><em>${routeDescriptions[route.name] || "局域网、保留地址与特殊网段"} · ${entries.length} 条地址</em>${list}${actions(index, "编辑地址列表")}</div>`;
+      return `<div class="route-option base-route">${enabledBox(route, index, '<span class="base-route-badge">固定直连</span>')}<em>${routeDescriptions[route.name] || "局域网、保留地址与特殊网段"} · ${formatNumber(entries.length)} 条地址</em>${list}${actions(route, index, "编辑地址列表…")}</div>`;
     };
     const routes = data.routes.map((route, index) => ({ route, index }));
     const baseRoutes = routes.filter(({ route }) => isLanRoute(route));
     const ipv4Routes = routes.filter(({ route }) => isIpv4Route(route));
-    document.querySelector("#route-options").innerHTML = routes.filter(({ route }) => !isLanRoute(route) && !isIpv4Route(route)).map(({ route, index }) => renderRoute(route, index)).join("");
+    const customRoutes = routes.filter(({ route }) => !isLanRoute(route) && !isIpv4Route(route));
+    document.querySelector("#route-options").innerHTML = customRoutes.length ? customRoutes.map(({ route, index }) => renderRoute(route, index)).join("") : emptyState("暂无分流策略组；可用下方按钮增加一个。 ");
     document.querySelector("#base-rule-options").innerHTML = baseRoutes.map(({ route, index }) => renderBaseRoute(route, index)).join("");
     document.querySelector("#base-rule-section").classList.toggle("hidden", !baseRoutes.length);
     document.querySelector("#ipv4-rule-options").innerHTML = ipv4Routes.map(({ route, index }) => renderBaseRoute(route, index)).join("");
     document.querySelector("#ipv4-rule-section").classList.toggle("hidden", !ipv4Routes.length);
     document.querySelectorAll("[data-route]").forEach((input) => input.onchange = () => { data.routes[input.dataset.route].enabled = input.checked; });
     document.querySelectorAll("[data-target-route]").forEach((select) => select.onchange = () => { data.routes[select.dataset.targetRoute].target = select.value; });
-    document.querySelectorAll("[data-remove-route]").forEach((button) => button.onclick = () => { data.routes.splice(Number(button.dataset.removeRoute), 1); editingRoute = null; renderRoutes(); });
+    document.querySelectorAll("[data-remove-route]").forEach((button) => button.onclick = () => {
+      const route = data.routes[Number(button.dataset.removeRoute)];
+      if (!route || !confirmRemoval(`「${route.name}」分流策略组`)) return;
+      markDirty();
+      data.routes.splice(Number(button.dataset.removeRoute), 1);
+      editingRoute = null;
+      renderRoutes();
+    });
     document.querySelectorAll("[data-edit-route]").forEach((button) => button.onclick = () => {
       editingRoute = Number(button.dataset.editRoute);
       drawerTrigger = button;
@@ -372,7 +439,10 @@ function setupGenerator(data) {
       };
       document.querySelector("#drawer-title").textContent = fixedDirect ? `${route.name} · 地址列表` : `${route.name} · 规则列表`;
       document.querySelector("#domain-drawer > p").textContent = fixedDirect ? "始终直连；只需维护地址列表。" : "分流方向由策略组统一决定，这里只维护匹配列表。";
-      document.querySelector("#drawer-items").innerHTML = routeRuleEntries(data, route).map(renderEntry).join("");
+      const entries = routeRuleEntries(data, route);
+      document.querySelector("#drawer-items").innerHTML = entries.length ? entries.map(renderEntry).join("") : emptyState("暂无规则；可用下方按钮增加一行。 ");
+      button.setAttribute("aria-expanded", "true");
+      setPageInert(true);
       backdrop.classList.remove("hidden");
       drawer.classList.remove("hidden");
       drawer.classList.add("open");
@@ -382,19 +452,28 @@ function setupGenerator(data) {
   };
   renderRoutes();
   const renderStandalone = () => {
-    document.querySelector("#standalone-options").innerHTML = (data.standalone_urls || []).map((item, index) => `<div class="standalone-row"><input aria-label="名称" data-standalone-name="${index}" value="${escapeHtml(item.name)}"><input aria-label="域名或 IP/CIDR" data-standalone-domain="${index}" value="${escapeHtml(item.domain)}" placeholder="example.com 或 1.2.3.4/32"><select aria-label="目标节点组" data-standalone-target="${index}">${Object.entries(data.targets).map(([key, name]) => `<option value="${escapeHtml(key)}" ${item.target === key ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}</select><button type="button" data-remove-standalone="${index}">删除</button></div>`).join("");
+    const items = data.standalone_urls || [];
+    document.querySelector("#standalone-options").innerHTML = items.length ? items.map((item, index) => `<div class="standalone-row"><label><span>名称</span><input name="standalone-name-${index}" aria-label="独立网址名称" data-standalone-name="${index}" value="${escapeHtml(item.name)}" placeholder="名称…" autocomplete="off"></label><label><span>域名或 IP/CIDR</span><input name="standalone-domain-${index}" aria-label="域名或 IP/CIDR" data-standalone-domain="${index}" value="${escapeHtml(item.domain)}" placeholder="例如 example.com 或 1.2.3.4/32…" inputmode="url" autocomplete="off" spellcheck="false"></label><label><span>目标节点组</span><select name="standalone-target-${index}" aria-label="目标节点组" data-standalone-target="${index}">${Object.entries(data.targets).map(([key, name]) => `<option value="${escapeHtml(key)}" ${item.target === key ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}</select></label><button type="button" data-remove-standalone="${index}" aria-label="删除独立网址 ${escapeHtml(item.name || "未命名")}">删除</button></div>`).join("") : emptyState("暂无独立网址；可用下方按钮增加一条。 ");
     document.querySelectorAll("[data-standalone-name]").forEach((input) => input.oninput = () => { data.standalone_urls[input.dataset.standaloneName].name = input.value; });
     document.querySelectorAll("[data-standalone-domain]").forEach((input) => input.oninput = () => { data.standalone_urls[input.dataset.standaloneDomain].domain = input.value.trim(); });
     document.querySelectorAll("[data-standalone-target]").forEach((select) => select.onchange = () => { data.standalone_urls[select.dataset.standaloneTarget].target = select.value; });
-    document.querySelectorAll("[data-remove-standalone]").forEach((button) => button.onclick = () => { data.standalone_urls.splice(Number(button.dataset.removeStandalone), 1); renderStandalone(); });
+    document.querySelectorAll("[data-remove-standalone]").forEach((button) => button.onclick = () => {
+      const index = Number(button.dataset.removeStandalone);
+      const item = data.standalone_urls[index];
+      if (!item || !confirmRemoval(`「${item.name || "未命名"}」独立网址`)) return;
+      markDirty();
+      data.standalone_urls.splice(index, 1);
+      renderStandalone();
+    });
   };
   renderStandalone();
   document.querySelector("#add-standalone").onclick = () => { data.standalone_urls.push({ name: "新条目", domain: "example.com", target: "DIRECT" }); renderStandalone(); };
   const renderGeoipRules = () => {
-    document.querySelector("#geoip-options").innerHTML = (data.standalone_rules || []).map((item, index) => {
+    const items = data.standalone_rules || [];
+    document.querySelector("#geoip-options").innerHTML = items.length ? items.map((item, index) => {
       const code = item.geoips?.[0] || "CN";
-      return `<div class="geoip-row"><select aria-label="国家代码" data-geoip-code="${index}">${geoipOptions(code)}</select><select aria-label="GeoIP 目标节点组" data-rule-target="${index}">${Object.entries(data.targets).map(([key, name]) => `<option value="${escapeHtml(key)}" ${item.target === key ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}</select><button type="button" data-remove-rule="${index}">删除</button></div>`;
-    }).join("");
+      return `<div class="geoip-row"><label><span>国家 / 地区</span><select name="geoip-code-${index}" aria-label="国家代码" data-geoip-code="${index}">${geoipOptions(code)}</select></label><label><span>目标节点组</span><select name="geoip-target-${index}" aria-label="GeoIP 目标节点组" data-rule-target="${index}">${Object.entries(data.targets).map(([key, name]) => `<option value="${escapeHtml(key)}" ${item.target === key ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}</select></label><button type="button" data-remove-rule="${index}" aria-label="删除 GeoIP ${escapeHtml(geoipName(code))}">删除</button></div>`;
+    }).join("") : emptyState("暂无 GeoIP 分流；可用下方按钮增加一条。 ");
   };
   const renderRuleLists = () => {
     renderGeoipRules();
@@ -405,7 +484,14 @@ function setupGenerator(data) {
       item.name = geoipName(code);
     });
     document.querySelectorAll("[data-rule-target]").forEach((select) => select.onchange = () => { data.standalone_rules[select.dataset.ruleTarget].target = select.value; });
-    document.querySelectorAll("[data-remove-rule]").forEach((button) => button.onclick = () => { data.standalone_rules.splice(Number(button.dataset.removeRule), 1); renderRuleLists(); });
+    document.querySelectorAll("[data-remove-rule]").forEach((button) => button.onclick = () => {
+      const index = Number(button.dataset.removeRule);
+      const item = data.standalone_rules[index];
+      if (!item || !confirmRemoval(`「${item.name || geoipName(item.geoips?.[0])}」GeoIP 规则`)) return;
+      markDirty();
+      data.standalone_rules.splice(index, 1);
+      renderRuleLists();
+    });
   };
   renderRuleLists();
   document.querySelector("#add-geoip").onclick = () => { data.standalone_rules.push({ name: geoipName("CN"), target: "DIRECT", geoips: ["CN"] }); renderRuleLists(); };
@@ -415,11 +501,16 @@ function setupGenerator(data) {
     drawer.classList.add("hidden");
     drawer.classList.remove("open");
     drawer.setAttribute("aria-hidden", "true");
+    setPageInert(false);
+    drawerTrigger?.setAttribute("aria-expanded", "false");
     drawerTrigger?.focus();
   };
   document.querySelector("#add-drawer-item").onclick = () => {
-    document.querySelector("#drawer-items").insertAdjacentHTML("beforeend", ruleRow("域名", "", "新规则"));
-    document.querySelector("#drawer-items").lastElementChild.querySelector("input").focus();
+    markDirty();
+    const items = document.querySelector("#drawer-items");
+    items.querySelector(".empty-state")?.remove();
+    items.insertAdjacentHTML("beforeend", ruleRow("域名", "", "新规则"));
+    items.lastElementChild.querySelector("input").focus();
   };
   document.querySelector("#save-domains").onclick = () => {
     if (editingRoute === null) return;
@@ -427,6 +518,8 @@ function setupGenerator(data) {
     const entries = [...document.querySelectorAll("#drawer-items .drawer-item")]
       .map((row) => ({ kind: row.querySelector("select").value, value: row.querySelector("input").value.trim() }))
       .filter((entry) => entry.value);
+    if (entries.length < routeRuleEntries(data, route).length && !confirmRemoval("已清空的规则")) return;
+    markDirty();
     const pick = (kind) => entries.filter((entry) => entry.kind === kind).map((entry) => entry.value);
     route.domain_sets = [];
     route.domains = pick("域名");
@@ -442,7 +535,8 @@ function setupGenerator(data) {
   drawer.onkeydown = (event) => {
     if (event.key === "Escape") return closeDrawer();
     if (event.key !== "Tab") return;
-    const focusable = [...drawer.querySelectorAll("button, input, select")];
+    const focusable = [...drawer.querySelectorAll("button, [href], input, select, textarea, [tabindex]:not([tabindex=\"-1\"])")].filter((element) => !element.disabled && !element.closest(".hidden"));
+    if (!focusable.length) return;
     const edge = event.shiftKey ? focusable[0] : focusable[focusable.length - 1];
     if (document.activeElement !== edge) return;
     event.preventDefault();
@@ -464,8 +558,8 @@ function setupGenerator(data) {
     ensureDns(data);
     dnsOptions.innerHTML = `<div class="dns-card dns-card-simple"><h3>DNS 分工</h3>
       <p class="section-help">节点域名和直连域名使用系统 DNS；代理流量侧再用国外 DoH 防污染。其余选项用内置默认值。</p>
-      <label><span>国外 DoH（经代理查询）</span><textarea id="overseas-dns-servers" spellcheck="false">${escapeHtml(data.dns.overseas.join("\n"))}</textarea><small>每行一个；Mihomo nameserver / Shadowrocket proxy-dns-server。用 IP 形式 DoH。</small></label>
-      <label><span>国内 DNS（System）</span><textarea id="domestic-dns-servers" spellcheck="false">${escapeHtml(data.dns.domestic.join("\n"))}</textarea><small>默认使用 system；解析代理节点域名，以及直连站点。</small></label>
+      <label><span>国外 DoH（经代理查询）</span><textarea id="overseas-dns-servers" name="overseas-dns-servers" spellcheck="false" autocomplete="off">${escapeHtml(data.dns.overseas.join("\n"))}</textarea><small>每行一个；Mihomo nameserver / Shadowrocket proxy-dns-server。用 IP 形式 DoH。</small></label>
+      <label><span>国内 DNS（System）</span><textarea id="domestic-dns-servers" name="domestic-dns-servers" spellcheck="false" autocomplete="off">${escapeHtml(data.dns.domestic.join("\n"))}</textarea><small>默认使用 system；解析代理节点域名，以及直连站点。</small></label>
     </div>`;
     const overseasArea = document.querySelector("#overseas-dns-servers");
     const domesticArea = document.querySelector("#domestic-dns-servers");
@@ -474,11 +568,11 @@ function setupGenerator(data) {
     domesticArea.oninput = sync;
   };
   const renderGroups = () => {
-    groupOptions.innerHTML = data.groups.map((group, index) => `<div class="group-row" data-group="${index}">
-      <label><span>显示名称</span><input data-display="${index}" value="${escapeHtml(data.targets[group.target] || group.target)}"><small>客户端显示的节点组名称</small></label>
-      <label><span>节点名称正则</span><input data-field="pattern" value="${escapeHtml(group.pattern)}" placeholder="例如 新加坡|SG"><small>匹配节点名称后加入此组</small></label>
-      <label><span>测速服务</span><select data-field="url">${Object.entries(speedTests).map(([name, url]) => `<option value="${url}" ${group.url === url ? "selected" : ""}>${name}</option>`).join("")}</select><small>用于判断节点连通性和延迟</small></label>
-      <button type="button" data-remove-group="${index}">删除</button></div>`).join("");
+    groupOptions.innerHTML = data.groups.length ? data.groups.map((group, index) => `<div class="group-row" data-group="${index}">
+      <label><span>显示名称</span><input name="group-display-${index}" data-display="${index}" value="${escapeHtml(data.targets[group.target] || group.target)}" autocomplete="off"><small>客户端显示的节点组名称</small></label>
+      <label><span>节点名称正则</span><input name="group-pattern-${index}" data-field="pattern" value="${escapeHtml(group.pattern)}" placeholder="例如 新加坡|SG…" autocomplete="off" spellcheck="false"><small>匹配节点名称后加入此组</small></label>
+      <label><span>测速服务</span><select name="group-url-${index}" data-field="url">${Object.entries(speedTests).map(([name, url]) => `<option value="${url}" ${group.url === url ? "selected" : ""}>${name}</option>`).join("")}</select><small>用于判断节点连通性和延迟</small></label>
+      <button type="button" data-remove-group="${index}" aria-label="删除节点组 ${escapeHtml(data.targets[group.target] || group.target)}">删除</button></div>`).join("") : emptyState("暂无节点组；可用下方按钮增加一个。 ");
     groupOptions.querySelectorAll("[data-display]").forEach((input) => {
       input.oninput = () => { data.targets[data.groups[input.dataset.display].target] = input.value; renderRoutes(); renderStandalone(); renderRuleLists(); };
       input.onchange = () => {
@@ -491,7 +585,23 @@ function setupGenerator(data) {
         renderRuleLists();
       };
     });
-    groupOptions.querySelectorAll("[data-remove-group]").forEach((button) => button.onclick = () => { const index = Number(button.dataset.removeGroup); const removed = data.groups[index]; data.groups.splice(index, 1); delete data.targets[removed.target]; data.routes.forEach((route) => { if (route.target === removed.target) route.target = "DIRECT"; }); data.standalone_urls?.forEach((item) => { if (item.target === removed.target) item.target = "DIRECT"; }); data.standalone_rules?.forEach((item) => { if (item.target === removed.target) item.target = "DIRECT"; }); data.groups.forEach((group) => { if (group.fallback === removed.target) group.fallback = "DIRECT"; }); if (data.final === removed.target) data.final = "DIRECT"; renderGroups(); renderRoutes(); renderStandalone(); renderRuleLists(); });
+    groupOptions.querySelectorAll("[data-remove-group]").forEach((button) => button.onclick = () => {
+      const index = Number(button.dataset.removeGroup);
+      const removed = data.groups[index];
+      if (!removed || !confirmRemoval(`「${data.targets[removed.target] || removed.target}」节点组`)) return;
+      markDirty();
+      data.groups.splice(index, 1);
+      delete data.targets[removed.target];
+      data.routes.forEach((route) => { if (route.target === removed.target) route.target = "DIRECT"; });
+      data.standalone_urls?.forEach((item) => { if (item.target === removed.target) item.target = "DIRECT"; });
+      data.standalone_rules?.forEach((item) => { if (item.target === removed.target) item.target = "DIRECT"; });
+      data.groups.forEach((group) => { if (group.fallback === removed.target) group.fallback = "DIRECT"; });
+      if (data.final === removed.target) data.final = "DIRECT";
+      renderGroups();
+      renderRoutes();
+      renderStandalone();
+      renderRuleLists();
+    });
   };
   syncGroupKeys(data);
   renderGroups();
@@ -513,7 +623,7 @@ function setupGenerator(data) {
   flushGenerator = () => {
     groupOptions.querySelectorAll(".group-row").forEach((row) => {
       const group = data.groups[Number(row.dataset.group)];
-      row.querySelectorAll("[data-field]").forEach((input) => { group[input.dataset.field] = input.value; });
+      row.querySelectorAll("[data-field]").forEach((input) => { group[input.dataset.field] = input.value.trim(); });
       const display = row.querySelector("[data-display]");
       if (display) data.targets[group.target] = display.value.trim() || "未命名节点组";
       group.interval = Number(document.querySelector("#group-interval").value);
@@ -522,7 +632,7 @@ function setupGenerator(data) {
       if (!group.fallback) group.fallback = "DIRECT";
     });
     data.routes.forEach((route, index) => { const target = document.querySelector(`[data-target-route="${index}"]`); if (target) route.target = target.value; });
-    data.standalone_urls.forEach((item) => { item.domain = normalizeStandaloneValue(item.domain); });
+    data.standalone_urls.forEach((item) => { item.name = String(item.name || "").trim(); item.domain = normalizeStandaloneValue(item.domain); });
     const overseasArea = document.querySelector("#overseas-dns-servers");
     const domesticArea = document.querySelector("#domestic-dns-servers");
     if (overseasArea && domesticArea) applyDns(dnsLines(overseasArea), dnsLines(domesticArea));
@@ -530,27 +640,107 @@ function setupGenerator(data) {
     syncGroupKeys(data);
     source = data;
   };
-  document.querySelector("#generate-button").onclick = () => {
+  const generate = () => {
     flushGenerator();
     renderGroups();
     renderRoutes();
     renderStandalone();
     renderRuleLists();
-    render();
+    const valid = render();
     const results = document.querySelector("#results");
-    results.classList.remove("hidden");
-    results.scrollIntoView({ behavior: "smooth", block: "start" });
+    results.classList.toggle("hidden", !valid);
+    if (!valid) return;
+    const behavior = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ? "auto" : "smooth";
+    results.scrollIntoView({ behavior, block: "start" });
+    document.querySelector("#results-title").focus({ preventScroll: true });
   };
+  generatorForm.addEventListener("submit", (event) => { event.preventDefault(); generate(); });
+  generatorForm.querySelectorAll("textarea").forEach((area) => area.addEventListener("keydown", (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      event.preventDefault();
+      if (generatorForm.requestSubmit) generatorForm.requestSubmit(); else generate();
+    }
+  }));
 }
 
 function escapeHtml(value) { return String(value).replace(/[&<>"']/g, (character) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[character])); }
 
-document.querySelectorAll(".tab").forEach((tab) => tab.onclick = () => { document.querySelectorAll(".tab").forEach((item) => { const active = item === tab; item.classList.toggle("active", active); item.setAttribute("aria-selected", String(active)); }); outputType = tab.dataset.output; render(); });
-document.querySelector("#copy-button").onclick = async () => {
+const outputTabs = document.querySelectorAll(".tab");
+const updateUrlState = (change) => {
+  if (typeof history === "undefined" || typeof location === "undefined") return;
+  const params = new URLSearchParams(location.search || "");
+  change(params);
+  const query = params.toString();
+  const next = `${location.pathname}${query ? `?${query}` : ""}${location.hash || ""}`;
+  const current = `${location.pathname}${location.search || ""}${location.hash || ""}`;
+  if (next !== current) history.pushState(null, "", next);
+};
+const setOutputTab = (tab, updateUrl = true) => {
+  outputTabs.forEach((item) => {
+    const active = item === tab;
+    item.classList.toggle("active", active);
+    item.setAttribute("aria-selected", String(active));
+    item.setAttribute("tabindex", active ? "0" : "-1");
+  });
+  outputType = tab.dataset.output;
+  document.querySelector("#output-panel").setAttribute("aria-labelledby", tab.id);
+  document.title = `${tab.textContent} · ${APP_NAME}`;
+  if (updateUrl) updateUrlState((params) => { if (outputType === "clash") params.delete("output"); else params.set("output", outputType); });
+  render();
+};
+outputTabs.forEach((tab) => {
+  const active = tab.dataset.output === outputType;
+  tab.classList.toggle("active", active);
+  tab.setAttribute("aria-selected", String(active));
+  tab.setAttribute("tabindex", active ? "0" : "-1");
+  if (active) {
+    document.querySelector("#output-panel").setAttribute("aria-labelledby", tab.id);
+    document.title = `${tab.textContent} · ${APP_NAME}`;
+  }
+  tab.onclick = () => setOutputTab(tab);
+  tab.onkeydown = (event) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    const tabs = [...document.querySelectorAll(".tab")];
+    const current = tabs.indexOf(tab);
+    const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : (current + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+    event.preventDefault();
+    tabs[next].focus();
+    setOutputTab(tabs[next]);
+  };
+});
+const urlDetails = document.querySelectorAll("details[id]");
+const detailDefaults = new Map();
+urlDetails.forEach((detail) => detailDefaults.set(detail.id, detail.open ? "open" : "closed"));
+const applyDetailsFromUrl = (params) => urlDetails.forEach((detail) => {
+  const state = params.get(detail.id) || detailDefaults.get(detail.id);
+  detail.open = state === "open";
+});
+applyDetailsFromUrl(new URLSearchParams(typeof location !== "undefined" ? location.search || "" : ""));
+urlDetails.forEach((detail) => {
+  const defaultState = detailDefaults.get(detail.id);
+  detail.addEventListener("toggle", () => {
+    const nextState = detail.open ? "open" : "closed";
+    const params = new URLSearchParams(typeof location !== "undefined" ? location.search || "" : "");
+    if ((params.get(detail.id) || defaultState) === nextState) return;
+    updateUrlState((next) => next.set(detail.id, nextState));
+  });
+});
+if (typeof window !== "undefined") window.addEventListener("popstate", () => {
+  const params = new URLSearchParams(location.search || "");
+  applyDetailsFromUrl(params);
+  const selected = params.get("output") || "clash";
+  outputTabs.forEach((tab) => { if (tab.dataset.output === selected) setOutputTab(tab, false); });
+});
+const copyButton = document.querySelector("#copy-button");
+copyButton.onclick = async () => {
   if (!outputEl.value) return;
+  copyButton.classList.add("is-loading");
+  copyButton.disabled = true;
+  copyButton.setAttribute("aria-busy", "true");
   // 非 HTTPS（例如手机用局域网 IP 访问）下没有 navigator.clipboard，退回手动复制
   try { await navigator.clipboard.writeText(outputEl.value); outputStatusEl.textContent = "已复制"; }
   catch { outputEl.select(); outputStatusEl.textContent = "已全选，请手动复制（自动复制需要 HTTPS）"; }
+  finally { copyButton.classList.remove("is-loading"); copyButton.disabled = false; copyButton.removeAttribute("aria-busy"); }
 };
 document.querySelector("#download-button").onclick = () => { if (!outputEl.value) return; const ext = outputType === "clash" ? "js" : "conf"; const blob = new Blob([outputEl.value], { type: "text/plain;charset=utf-8" }); const link = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: `traffic-router.${ext}` }); link.click(); URL.revokeObjectURL(link.href); };
 loadDefault();

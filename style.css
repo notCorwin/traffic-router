@@ -141,6 +141,62 @@ h2 { margin: 0; font-size: 18px; line-height: 1.35; letter-spacing: -.01em; }
 .loading-skeleton span { min-height: 118px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
 .loading-skeleton span:nth-child(2) { background: #fafbfc; }
 .loading-skeleton span:nth-child(3) { background: var(--paper); }
+.route-table-wrap {
+  grid-column: 1 / -1;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.route-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.route-table th {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+  text-align: left;
+  white-space: nowrap;
+}
+.route-table th:nth-child(1) { width: 7%; }
+.route-table th:nth-child(2) { width: 29%; }
+.route-table th:nth-child(3) { width: 27%; }
+.route-table th:nth-child(4) { width: 17%; }
+.route-table th:nth-child(5) { width: 20%; }
+.route-table td {
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+.route-table tbody tr:last-child td { border-bottom: 0; }
+.route-table tbody tr:hover { background: var(--surface-hover); }
+.route-table .route-enabled-cell { text-align: center; }
+.route-table-toggle { display: flex; min-height: 24px; align-items: center; justify-content: center; cursor: pointer; }
+.route-table-toggle input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+.route-table .route-name-cell > strong { font-size: 13px; }
+.route-table .route-description { margin: 5px 0 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
+.route-table .route-target-cell select { max-width: 280px; }
+.route-table .route-rule-cell { color: var(--muted); font-size: 12px; }
+.route-table .route-count { white-space: nowrap; }
+.route-table .route-actions { align-items: center; }
+.route-table .edit-domains, .route-table .remove-route { margin-top: 0; }
+.route-table .route-row:has(input:not(:checked)) .route-description,
+.route-table .route-row:has(input:not(:checked)) .route-rule-cell { color: var(--faint); }
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 .route-option {
   padding: 12px;
   border: 1px solid var(--line);
@@ -154,6 +210,7 @@ h2 { margin: 0; font-size: 18px; line-height: 1.35; letter-spacing: -.01em; }
 .route-toggle strong { overflow-wrap: anywhere; }
 .route-option strong { font-size: 13px; }
 .route-option em { display: block; min-height: 34px; margin: 6px 0 10px 26px; color: var(--muted); font-size: 11px; font-style: normal; line-height: 1.45; }
+.route-table select,
 .route-option select,
 .standalone-row input,
 .standalone-row select,
@@ -172,6 +229,7 @@ h2 { margin: 0; font-size: 18px; line-height: 1.35; letter-spacing: -.01em; }
   color: var(--text);
   font: 12px var(--mono);
 }
+.route-table select:focus-visible,
 .route-option select:focus-visible,
 .standalone-row input:focus-visible,
 .standalone-row select:focus-visible,
@@ -331,7 +389,38 @@ a:hover { color: var(--accent-hover); text-decoration-color: var(--accent-hover)
   .route-toggle { min-height: 44px; }
   .loading-skeleton { grid-template-columns: 1fr; }
   .route-toggle input { min-height: 18px; }
-  .route-option select, .standalone-row input, .standalone-row select, .drawer-item input, .drawer-item select, .group-row input, .group-row select, .shared-settings input, .geoip-row select, .dns-card-simple textarea { font-size: 16px; }
+  .route-option select, .route-table select, .standalone-row input, .standalone-row select, .drawer-item input, .drawer-item select, .group-row input, .group-row select, .shared-settings input, .geoip-row select, .dns-card-simple textarea { font-size: 16px; }
+  .route-table-wrap { border: 0; overflow: visible; }
+  .route-table { display: block; table-layout: auto; }
+  .route-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+  .route-table tbody { display: grid; gap: 10px; }
+  .route-table tr { display: block; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+  .route-table td { display: block; padding: 11px 12px; border: 0; }
+  .route-table td + td { border-top: 1px solid var(--line); }
+  .route-table .route-enabled-cell::before,
+  .route-table .route-target-cell::before,
+  .route-table .route-rule-cell::before,
+  .route-table .route-action-cell::before {
+    display: block;
+    margin-bottom: 5px;
+    color: var(--muted);
+    font-size: 11px;
+  }
+  .route-table .route-enabled-cell::before { content: "启用"; }
+  .route-table .route-target-cell::before { content: "目标节点组"; }
+  .route-table .route-rule-cell::before { content: "匹配规则"; }
+  .route-table .route-action-cell::before { content: "操作"; }
+  .route-table .route-enabled-cell { text-align: left; }
+  .route-table-toggle { justify-content: flex-start; min-height: 44px; }
+  .route-table .route-target-cell select { max-width: none; }
+  .route-table .route-action-cell .route-actions { gap: 8px; }
   #output { min-height: 400px; font-size: 16px; }
   .shared-settings, .group-row, .standalone-row, .geoip-row, .dns-card-simple { grid-template-columns: 1fr; }
   .group-row label:nth-child(n+2):nth-child(-n+4) { grid-column: auto; }

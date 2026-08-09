@@ -393,11 +393,12 @@ function setupGenerator(data) {
   });
   const renderRoutes = () => {
     const enabledBox = (route, index, badge = "") => `<label class="route-toggle"><input type="checkbox" name="route-enabled-${index}" aria-label="启用 ${escapeHtml(route.name)}" data-route="${index}" ${route.enabled !== false ? "checked" : ""}><strong>${escapeHtml(route.name)}</strong>${badge}</label>`;
+    const tableToggle = (route, index) => `<label class="route-table-toggle"><input type="checkbox" name="route-enabled-${index}" aria-label="启用 ${escapeHtml(route.name)}" data-route="${index}" ${route.enabled !== false ? "checked" : ""}><span class="visually-hidden">启用 ${escapeHtml(route.name)}</span></label>`;
     const targetSelect = (selected, label, attribute, index) => `<select name="route-target-${index}" ${attribute}="${index}" aria-label="${escapeHtml(label)}">${Object.entries(data.targets).map(([key, name]) => `<option value="${escapeHtml(key)}" ${selected === key ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}</select>`;
     const actions = (route, index, editLabel) => `<div class="route-actions"><button type="button" class="edit-domains" data-edit-route="${index}" aria-controls="domain-drawer" aria-haspopup="dialog" aria-expanded="false">${editLabel}</button><button type="button" class="remove-route" data-remove-route="${index}" aria-label="删除分流策略组 ${escapeHtml(route.name)}">删除</button></div>`;
     const renderRoute = (route, index) => {
       const count = routeRuleEntries(data, route).length;
-      return `<div class="route-option">${enabledBox(route, index)}<em>${routeDescriptions[route.name] || "自定义分流规则"} · ${formatNumber(count)} 条匹配规则</em>${targetSelect(route.target, `${route.name} 导向节点组`, "data-target-route", index)}${actions(route, index, "编辑规则列表…")}</div>`;
+      return `<tr class="route-row"><td class="route-enabled-cell">${tableToggle(route, index)}</td><td class="route-name-cell"><strong>${escapeHtml(route.name)}</strong><p class="route-description">${routeDescriptions[route.name] || "自定义分流规则"}</p></td><td class="route-target-cell">${targetSelect(route.target, `${route.name} 导向节点组`, "data-target-route", index)}</td><td class="route-rule-cell"><span class="route-count">${formatNumber(count)} 条匹配规则</span></td><td class="route-action-cell">${actions(route, index, "编辑规则列表…")}</td></tr>`;
     };
     const renderBaseRoute = (route, index) => {
       const entries = routeRuleEntries(data, route);
@@ -410,7 +411,8 @@ function setupGenerator(data) {
     const baseRoutes = routes.filter(({ route }) => isLanRoute(route));
     const ipv4Routes = routes.filter(({ route }) => isIpv4Route(route));
     const customRoutes = routes.filter(({ route }) => !isLanRoute(route) && !isIpv4Route(route));
-    document.querySelector("#route-options").innerHTML = customRoutes.length ? customRoutes.map(({ route, index }) => renderRoute(route, index)).join("") : emptyState("暂无分流策略组；可用下方按钮增加一个。 ");
+    const routeTable = `<div class="route-table-wrap"><table class="route-table"><caption class="visually-hidden">服务分流策略列表</caption><thead><tr><th scope="col">启用</th><th scope="col">分流策略</th><th scope="col">目标节点组</th><th scope="col">匹配规则</th><th scope="col">操作</th></tr></thead><tbody>${customRoutes.map(({ route, index }) => renderRoute(route, index)).join("")}</tbody></table></div>`;
+    document.querySelector("#route-options").innerHTML = customRoutes.length ? routeTable : emptyState("暂无分流策略组；可用下方按钮增加一个。 ");
     document.querySelector("#base-rule-options").innerHTML = baseRoutes.map(({ route, index }) => renderBaseRoute(route, index)).join("");
     document.querySelector("#base-rule-section").classList.toggle("hidden", !baseRoutes.length);
     document.querySelector("#ipv4-rule-options").innerHTML = ipv4Routes.map(({ route, index }) => renderBaseRoute(route, index)).join("");

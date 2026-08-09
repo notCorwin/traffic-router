@@ -299,7 +299,6 @@ input::placeholder, textarea::placeholder { color: var(--faint); }
 
 .base-rule-section { padding-top: 1px; }
 .base-rule-options { grid-template-columns: 1fr; }
-.base-route { border-color: #7394c3; background: var(--accent-soft); }
 .base-route-label { display: flex; min-height: 24px; align-items: center; gap: 12px; }
 .base-route-label strong { font-size: 13px; }
 .base-route em { min-height: 0; margin: 6px 0 10px; }

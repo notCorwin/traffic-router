@@ -33,6 +33,6 @@ node check.mjs
 `rules-source.json` 不写完整 DNS。生成时用内置默认值展开，页面上也只暴露两份列表：
 
 - **国外 DoH（经代理查询）**：Mihomo 的 `nameserver`，Shadowrocket 的 `proxy-dns-server`。默认 `1.1.1.1` + `8.8.8.8` 的 IP 形式 DoH。不要拿它解析节点域名——在国内往往要先翻墙才能访问这些 DoH。
-- **国内 DNS（System）**：Mihomo 的 `proxy-server-nameserver` / `direct-nameserver` 和 Shadowrocket 的 `dns-server` / `fallback-dns-server` 默认使用 `system`；Shadowrocket 同时用 `dns-direct-system = true` 解析直连域名。
+- **国内 DNS**：Mihomo 的 `default-nameserver` / `proxy-server-nameserver` / `direct-nameserver` 和 Shadowrocket 的 `dns-server` / `fallback-dns-server` 默认使用 `223.5.5.5`；Shadowrocket 默认使用 `dns-direct-system = false`。
 
 其余项（fake-ip 过滤、`hijack-dns`、bootstrap nameserver 等）固定用代码里的防污染默认值，不必写进规则源。

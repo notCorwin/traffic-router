@@ -53,6 +53,14 @@ const emitted = new Set(app.rules(disabled, "MATCH").map(([, name]) => name));
 assert.ok(!emitted.has(data.routes[0].name), "停用的策略组不该出现在输出里");
 assert.ok(emitted.has(data.routes[1].name), "启用的策略组必须出现");
 
+// 基础直连规则没有启用开关，始终必须出现在输出中
+const disabledBase = fixture();
+disabledBase.routes.find((route) => route.name === "局域网直连").enabled = false;
+disabledBase.routes.find((route) => route.name === "IPv4直连").enabled = false;
+const baseRules = ruleLines(disabledBase);
+assert.ok(baseRules.includes("IP-CIDR,192.168.0.0/16,DIRECT,no-resolve"), "局域网基础规则必须始终启用");
+assert.ok(baseRules.includes(ipv4Rule), "IPv4 基础规则必须始终启用");
+
 // 订阅自带规则必须排在 MATCH 之前，否则永远命中不了
 const main = new Function(`${app.renderClash(data)}\nreturn main;`)();
 const merged = main({ proxies: [{ name: "🇸🇬 SG-01" }], rules: ["DOMAIN,example.com,DIRECT"] });
@@ -76,14 +84,15 @@ for (const rule of ruleLines(data)) {
   if (kind === "IP-CIDR" && privateIp.test(value)) assert.equal(target, "DIRECT", `私有地址 ${value} 不该指向 ${target}`);
 }
 
-// 直连/节点 DNS 与经代理 DNS 必须分开；国内侧默认使用 System
+// 直连/节点 DNS 与经代理 DNS 必须分开；国内侧默认使用 223.5.5.5
 assert.ok(data.dns?.overseas?.length && data.dns?.domestic?.length, "应展开默认 DNS 列表");
 assert.notDeepEqual(data.dns.overseas, data.dns.domestic);
 assert.notDeepEqual(data.mihomo_dns["direct-nameserver"], data.mihomo_dns.nameserver);
+assert.deepEqual(data.mihomo_dns["default-nameserver"], data.dns.domestic);
 assert.deepEqual(data.mihomo_dns["proxy-server-nameserver"], data.dns.domestic);
 assert.deepEqual(data.shadowrocket_dns.servers, data.dns.domestic);
 assert.deepEqual(data.shadowrocket_dns.proxy_servers, data.dns.overseas);
-assert.match(app.renderShadowrocket(data), /^dns-direct-system = true$/m);
+assert.match(app.renderShadowrocket(data), /^dns-direct-system = false$/m);
 assert.match(app.renderShadowrocket(data), /^FINAL,/m);
 // 规则源不必手写完整 DNS；缺省时用内置默认值
 const bare = fixture();
@@ -91,9 +100,11 @@ assert.equal(bare.mihomo_dns, undefined);
 assert.equal(bare.shadowrocket_dns, undefined);
 app.validate(bare);
 assert.deepEqual(bare.dns.overseas, ["https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query"]);
-assert.deepEqual(bare.dns.domestic, ["system"]);
+assert.deepEqual(bare.dns.domestic, ["223.5.5.5"]);
+assert.deepEqual(bare.mihomo_dns["default-nameserver"], bare.dns.domestic);
 assert.deepEqual(bare.mihomo_dns["proxy-server-nameserver"], bare.dns.domestic);
-assert.match(app.renderShadowrocket(bare), /^dns-server = system$/m);
+assert.match(app.renderShadowrocket(bare), /^dns-server = 223\.5\.5\.5$/m);
+assert.match(app.renderShadowrocket(bare), /^dns-direct-system = false$/m);
 
 for (const [value, expected] of [["1.2.3.4/32", true], ["1.2.3.4", false], ["256.0.0.1/8", false], ["10.0.0.0/33", false], ["1.2.3.4/8/8", false], ["2001:db8::/32", true], ["2001:db8::/129", false]]) {
   assert.equal(app.validCidr(value), expected, `validCidr(${value})`);

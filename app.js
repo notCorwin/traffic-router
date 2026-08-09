@@ -23,9 +23,9 @@ const IPV4_ROUTE = "IPv4直连";
 const routeDescriptions = { Apple: "Apple 服务直连", AI: "ChatGPT、Gemini、Claude、Grok、Cursor、Copilot 等 AI 服务", LINE: "LINE 服务", Netflix: "Netflix 与 Fast.com", YouTube: "YouTube 视频服务", TikTok: "TikTok 短视频服务", Google: "Google 服务", GitHub: "GitHub 与资源域名", "局域网直连": "局域网、保留地址与特殊网段", "IPv4直连": "所有 IPv4 地址固定直连" };
 const formatNumber = (value) => new Intl.NumberFormat("zh-CN").format(value);
 // 国外 DoH 用 IP，避免解析 DoH 域名时再被污染。
-// 节点域名和直连域名使用系统 DNS，不额外依赖国内 DoH。
+// 节点域名和直连域名使用国内 DNS，不额外依赖国内 DoH。
 const defaultOverseasDns = ["https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query"];
-const defaultDomesticDns = ["system"];
+const defaultDomesticDns = ["223.5.5.5"];
 const defaultFakeIpFilter = ["*.lan", "*.local", "*.localhost", "+.internal", "+.home.arpa", "+.arpa", "time.*.com", "ntp.*.com", "+.stun.*", "stun.*", "*.msftconnecttest.com", "www.msftconnecttest.com"];
 const defaultHijackDns = ["8.8.8.8:53", "8.8.4.4:53", "1.1.1.1:53", "1.0.0.1:53", "223.5.5.5:53", "119.29.29.29:53"];
 const defaultAlwaysRealIp = ["*.lan", "*.local", "*.arpa", "time.*.com", "ntp.*.com", "www.msftconnecttest.com"];
@@ -136,7 +136,7 @@ function expandStandaloneUrl(item) {
 const cidrRule = (value, target) => `IP-CIDR${value.includes(":") ? "6" : ""},${value},${target},no-resolve`;
 
 function expandedRoutes(data) {
-  const routes = data.routes.filter((route) => route.enabled !== false).map((route) => ({ ...route, enabled: undefined, domain_sets: undefined, domains: routeDomains(data, route) }));
+  const routes = data.routes.filter((route) => (route.name === LAN_ROUTE || route.name === IPV4_ROUTE) || route.enabled !== false).map((route) => ({ ...route, enabled: undefined, domain_sets: undefined, domains: routeDomains(data, route) }));
   return [
     ...routes.filter((route) => route.name !== IPV4_ROUTE),
     ...(data.standalone_urls || []).map(expandStandaloneUrl),
@@ -207,7 +207,7 @@ function resolveDnsLists(data) {
   };
 }
 
-// 规则源只保留海外 DoH / 国内 System 两份列表；其余用防污染默认值展开给两个客户端
+// 规则源只保留海外 DoH / 国内 DNS 两份列表；其余用防污染默认值展开给两个客户端
 function ensureDns(data) {
   const { overseas, domestic } = resolveDnsLists(data);
   data.dns = { overseas: [...overseas], domestic: [...domestic] };
@@ -219,7 +219,7 @@ function ensureDns(data) {
     "use-system-hosts": true,
     "respect-rules": false,
     ipv6: false,
-    "default-nameserver": ["223.5.5.5", "119.29.29.29"],
+    "default-nameserver": [...data.dns.domestic],
     "enhanced-mode": "fake-ip",
     "fake-ip-range": "198.18.0.1/16",
     "fake-ip-filter": [...defaultFakeIpFilter],
@@ -234,10 +234,10 @@ function ensureDns(data) {
     ipv6: false,
     prefer_ipv6: false,
     private_ip_answer: true,
-    dns_direct_system: true,
+    dns_direct_system: false,
     dns_direct_fallback_proxy: true,
     hijack_dns: [...defaultHijackDns],
-    // dns-server 使用系统 DNS 解析节点与直连域名；proxy-dns-server 走代理后再查，可用国外 DoH
+    // dns-server 使用国内 DNS 解析节点与直连域名；proxy-dns-server 走代理后再查，可用国外 DoH
     servers: data.dns.domestic,
     fallback_servers: data.dns.domestic,
     proxy_servers: data.dns.overseas,
@@ -326,7 +326,7 @@ function render() {
     validate(source);
     outputEl.value = outputType === "clash" ? renderClash(source) : renderShadowrocket(source);
     const count = rules(source, "MATCH").length;
-    const enabled = source.routes.filter((route) => route.enabled !== false).length;
+    const enabled = source.routes.filter((route) => (route.name === LAN_ROUTE || route.name === IPV4_ROUTE) || route.enabled !== false).length;
     summaryEl.textContent = `${formatNumber(count)} 条规则 · ${formatNumber(enabled)} 个策略组 · ${formatNumber((source.standalone_urls || []).length)} 个独立网址 · ${formatNumber((source.standalone_rules || []).length)} 个 GeoIP · 浏览器本地生成`;
     generatorStatusEl.textContent = "规则源校验通过"; generatorStatusEl.className = "generator-status";
     outputStatusEl.textContent = "";
@@ -374,6 +374,7 @@ function setupGenerator(data) {
   const isLanRoute = (route) => route.name === LAN_ROUTE;
   const isIpv4Route = (route) => route.name === IPV4_ROUTE;
   const isFixedDirectRoute = (route) => isLanRoute(route) || isIpv4Route(route);
+  data.routes.forEach((route) => { if (isFixedDirectRoute(route)) route.enabled = true; });
   const generatorForm = document.querySelector("#generator");
   const pageSections = [generatorForm, document.querySelector("#results"), document.querySelector("footer")].filter(Boolean);
   const setPageInert = (inert) => pageSections.forEach((section) => { section.inert = inert; });
@@ -393,24 +394,27 @@ function setupGenerator(data) {
   });
   const renderRoutes = () => {
     const enabledBox = (route, index, badge = "") => `<label class="route-toggle"><input type="checkbox" name="route-enabled-${index}" aria-label="启用 ${escapeHtml(route.name)}" data-route="${index}" ${route.enabled !== false ? "checked" : ""}><strong>${escapeHtml(route.name)}</strong>${badge}</label>`;
+    const tableToggle = (route, index) => `<label class="route-table-toggle"><input type="checkbox" name="route-enabled-${index}" aria-label="启用 ${escapeHtml(route.name)}" data-route="${index}" ${route.enabled !== false ? "checked" : ""}><span class="visually-hidden">启用 ${escapeHtml(route.name)}</span></label>`;
     const targetSelect = (selected, label, attribute, index) => `<select name="route-target-${index}" ${attribute}="${index}" aria-label="${escapeHtml(label)}">${Object.entries(data.targets).map(([key, name]) => `<option value="${escapeHtml(key)}" ${selected === key ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}</select>`;
     const actions = (route, index, editLabel) => `<div class="route-actions"><button type="button" class="edit-domains" data-edit-route="${index}" aria-controls="domain-drawer" aria-haspopup="dialog" aria-expanded="false">${editLabel}</button><button type="button" class="remove-route" data-remove-route="${index}" aria-label="删除分流策略组 ${escapeHtml(route.name)}">删除</button></div>`;
     const renderRoute = (route, index) => {
       const count = routeRuleEntries(data, route).length;
-      return `<div class="route-option">${enabledBox(route, index)}<em>${routeDescriptions[route.name] || "自定义分流规则"} · ${formatNumber(count)} 条匹配规则</em>${targetSelect(route.target, `${route.name} 导向节点组`, "data-target-route", index)}${actions(route, index, "编辑规则列表…")}</div>`;
+      return `<tr class="route-row"><td class="route-enabled-cell">${tableToggle(route, index)}</td><td class="route-name-cell"><strong>${escapeHtml(route.name)}</strong><p class="route-description">${routeDescriptions[route.name] || "自定义分流规则"}</p></td><td class="route-target-cell">${targetSelect(route.target, `${route.name} 导向节点组`, "data-target-route", index)}</td><td class="route-rule-cell"><span class="route-count">${formatNumber(count)} 条匹配规则</span></td><td class="route-action-cell">${actions(route, index, "编辑规则列表…")}</td></tr>`;
     };
     const renderBaseRoute = (route, index) => {
       const entries = routeRuleEntries(data, route);
       const list = entries.length
         ? `<ul class="base-rule-list">${entries.map(({ kind, value }) => `<li><code>${escapeHtml(value)}</code><small>${escapeHtml(kind)}</small></li>`).join("")}</ul>`
         : `<p class="base-rule-empty">暂无地址</p>`;
-      return `<div class="route-option base-route">${enabledBox(route, index, '<span class="base-route-badge">固定直连</span>')}<em>${routeDescriptions[route.name] || "局域网、保留地址与特殊网段"} · ${formatNumber(entries.length)} 条地址</em>${list}${actions(route, index, "编辑地址列表…")}</div>`;
+      const label = `<div class="base-route-label"><strong>${escapeHtml(route.name)}</strong><span class="base-route-badge">固定直连</span></div>`;
+      return `<div class="route-option base-route">${label}<em>${routeDescriptions[route.name] || "局域网、保留地址与特殊网段"} · ${formatNumber(entries.length)} 条地址</em>${list}${actions(route, index, "编辑地址列表…")}</div>`;
     };
     const routes = data.routes.map((route, index) => ({ route, index }));
     const baseRoutes = routes.filter(({ route }) => isLanRoute(route));
     const ipv4Routes = routes.filter(({ route }) => isIpv4Route(route));
     const customRoutes = routes.filter(({ route }) => !isLanRoute(route) && !isIpv4Route(route));
-    document.querySelector("#route-options").innerHTML = customRoutes.length ? customRoutes.map(({ route, index }) => renderRoute(route, index)).join("") : emptyState("暂无分流策略组；可用下方按钮增加一个。 ");
+    const routeTable = `<div class="route-table-wrap"><table class="route-table"><caption class="visually-hidden">服务分流策略列表</caption><thead><tr><th scope="col">启用</th><th scope="col">分流策略</th><th scope="col">目标节点组</th><th scope="col">匹配规则</th><th scope="col">操作</th></tr></thead><tbody>${customRoutes.map(({ route, index }) => renderRoute(route, index)).join("")}</tbody></table></div>`;
+    document.querySelector("#route-options").innerHTML = customRoutes.length ? routeTable : emptyState("暂无分流策略组；可用下方按钮增加一个。 ");
     document.querySelector("#base-rule-options").innerHTML = baseRoutes.map(({ route, index }) => renderBaseRoute(route, index)).join("");
     document.querySelector("#base-rule-section").classList.toggle("hidden", !baseRoutes.length);
     document.querySelector("#ipv4-rule-options").innerHTML = ipv4Routes.map(({ route, index }) => renderBaseRoute(route, index)).join("");
@@ -453,7 +457,10 @@ function setupGenerator(data) {
   renderRoutes();
   const renderStandalone = () => {
     const items = data.standalone_urls || [];
-    document.querySelector("#standalone-options").innerHTML = items.length ? items.map((item, index) => `<div class="standalone-row"><label><span>名称</span><input name="standalone-name-${index}" aria-label="独立网址名称" data-standalone-name="${index}" value="${escapeHtml(item.name)}" placeholder="名称…" autocomplete="off"></label><label><span>域名或 IP/CIDR</span><input name="standalone-domain-${index}" aria-label="域名或 IP/CIDR" data-standalone-domain="${index}" value="${escapeHtml(item.domain)}" placeholder="例如 example.com 或 1.2.3.4/32…" inputmode="url" autocomplete="off" spellcheck="false"></label><label><span>目标节点组</span><select name="standalone-target-${index}" aria-label="目标节点组" data-standalone-target="${index}">${Object.entries(data.targets).map(([key, name]) => `<option value="${escapeHtml(key)}" ${item.target === key ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}</select></label><button type="button" data-remove-standalone="${index}" aria-label="删除独立网址 ${escapeHtml(item.name || "未命名")}">删除</button></div>`).join("") : emptyState("暂无独立网址；可用下方按钮增加一条。 ");
+    const targetOptions = (selected) => Object.entries(data.targets).map(([key, name]) => `<option value="${escapeHtml(key)}" ${selected === key ? "selected" : ""}>${escapeHtml(name)}</option>`).join("");
+    const renderStandaloneRow = (item, index) => `<tr class="standalone-table-row"><td class="standalone-name-cell"><input name="standalone-name-${index}" aria-label="独立网址名称" data-standalone-name="${index}" value="${escapeHtml(item.name)}" placeholder="名称…" autocomplete="off"></td><td class="standalone-domain-cell"><input name="standalone-domain-${index}" aria-label="域名或 IP/CIDR" data-standalone-domain="${index}" value="${escapeHtml(item.domain)}" placeholder="例如 example.com 或 1.2.3.4/32…" inputmode="url" autocomplete="off" spellcheck="false"></td><td class="standalone-target-cell"><select name="standalone-target-${index}" aria-label="目标节点组" data-standalone-target="${index}">${targetOptions(item.target)}</select></td><td class="standalone-action-cell"><button type="button" data-remove-standalone="${index}" aria-label="删除独立网址 ${escapeHtml(item.name || "未命名")}">删除</button></td></tr>`;
+    const standaloneTable = `<div class="standalone-table-wrap"><table class="standalone-table"><caption class="visually-hidden">独立网址列表</caption><thead><tr><th scope="col">名称</th><th scope="col">域名或 IP/CIDR</th><th scope="col">目标节点组</th><th scope="col">操作</th></tr></thead><tbody>${items.map(renderStandaloneRow).join("")}</tbody></table></div>`;
+    document.querySelector("#standalone-options").innerHTML = items.length ? standaloneTable : emptyState("暂无独立网址；可用下方按钮增加一条。 ");
     document.querySelectorAll("[data-standalone-name]").forEach((input) => input.oninput = () => { data.standalone_urls[input.dataset.standaloneName].name = input.value; });
     document.querySelectorAll("[data-standalone-domain]").forEach((input) => input.oninput = () => { data.standalone_urls[input.dataset.standaloneDomain].domain = input.value.trim(); });
     document.querySelectorAll("[data-standalone-target]").forEach((select) => select.onchange = () => { data.standalone_urls[select.dataset.standaloneTarget].target = select.value; });
@@ -557,9 +564,9 @@ function setupGenerator(data) {
   const renderDns = () => {
     ensureDns(data);
     dnsOptions.innerHTML = `<div class="dns-card dns-card-simple"><h3>DNS 分工</h3>
-      <p class="section-help">节点域名和直连域名使用系统 DNS；代理流量侧再用国外 DoH 防污染。其余选项用内置默认值。</p>
+      <p class="section-help">节点域名和直连域名使用国内 DNS；代理流量侧再用国外 DoH 防污染。其余选项用内置默认值。</p>
       <label><span>国外 DoH（经代理查询）</span><textarea id="overseas-dns-servers" name="overseas-dns-servers" spellcheck="false" autocomplete="off">${escapeHtml(data.dns.overseas.join("\n"))}</textarea><small>每行一个；Mihomo nameserver / Shadowrocket proxy-dns-server。用 IP 形式 DoH。</small></label>
-      <label><span>国内 DNS（System）</span><textarea id="domestic-dns-servers" name="domestic-dns-servers" spellcheck="false" autocomplete="off">${escapeHtml(data.dns.domestic.join("\n"))}</textarea><small>默认使用 system；解析代理节点域名，以及直连站点。</small></label>
+      <label><span>国内 DNS</span><textarea id="domestic-dns-servers" name="domestic-dns-servers" spellcheck="false" autocomplete="off">${escapeHtml(data.dns.domestic.join("\n"))}</textarea><small>默认使用 223.5.5.5；解析代理节点域名，以及直连站点。</small></label>
     </div>`;
     const overseasArea = document.querySelector("#overseas-dns-servers");
     const domesticArea = document.querySelector("#domestic-dns-servers");
@@ -568,11 +575,8 @@ function setupGenerator(data) {
     domesticArea.oninput = sync;
   };
   const renderGroups = () => {
-    groupOptions.innerHTML = data.groups.length ? data.groups.map((group, index) => `<div class="group-row" data-group="${index}">
-      <label><span>显示名称</span><input name="group-display-${index}" data-display="${index}" value="${escapeHtml(data.targets[group.target] || group.target)}" autocomplete="off"><small>客户端显示的节点组名称</small></label>
-      <label><span>节点名称正则</span><input name="group-pattern-${index}" data-field="pattern" value="${escapeHtml(group.pattern)}" placeholder="例如 新加坡|SG…" autocomplete="off" spellcheck="false"><small>匹配节点名称后加入此组</small></label>
-      <label><span>测速服务</span><select name="group-url-${index}" data-field="url">${Object.entries(speedTests).map(([name, url]) => `<option value="${url}" ${group.url === url ? "selected" : ""}>${name}</option>`).join("")}</select><small>用于判断节点连通性和延迟</small></label>
-      <button type="button" data-remove-group="${index}" aria-label="删除节点组 ${escapeHtml(data.targets[group.target] || group.target)}">删除</button></div>`).join("") : emptyState("暂无节点组；可用下方按钮增加一个。 ");
+    const groupTable = `<div class="group-table-wrap"><table class="group-table"><caption class="visually-hidden">节点组列表</caption><thead><tr><th scope="col">显示名称</th><th scope="col">节点名称正则</th><th scope="col">测速服务</th><th scope="col">操作</th></tr></thead><tbody>${data.groups.map((group, index) => `<tr class="group-row" data-group="${index}"><td class="group-display-cell"><input name="group-display-${index}" aria-label="显示名称" data-display="${index}" value="${escapeHtml(data.targets[group.target] || group.target)}" autocomplete="off"><small>客户端显示的节点组名称</small></td><td class="group-pattern-cell"><input name="group-pattern-${index}" aria-label="节点名称正则" data-field="pattern" value="${escapeHtml(group.pattern)}" placeholder="例如 新加坡|SG…" autocomplete="off" spellcheck="false"><small>匹配节点名称后加入此组</small></td><td class="group-url-cell"><select name="group-url-${index}" aria-label="测速服务" data-field="url">${Object.entries(speedTests).map(([name, url]) => `<option value="${url}" ${group.url === url ? "selected" : ""}>${name}</option>`).join("")}</select><small>用于判断节点连通性和延迟</small></td><td class="group-action-cell"><button type="button" data-remove-group="${index}" aria-label="删除节点组 ${escapeHtml(data.targets[group.target] || group.target)}">删除</button></td></tr>`).join("")}</tbody></table></div>`;
+    groupOptions.innerHTML = data.groups.length ? groupTable : emptyState("暂无节点组；可用下方按钮增加一个。 ");
     groupOptions.querySelectorAll("[data-display]").forEach((input) => {
       input.oninput = () => { data.targets[data.groups[input.dataset.display].target] = input.value; renderRoutes(); renderStandalone(); renderRuleLists(); };
       input.onchange = () => {

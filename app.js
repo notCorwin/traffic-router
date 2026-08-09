@@ -136,7 +136,7 @@ function expandStandaloneUrl(item) {
 const cidrRule = (value, target) => `IP-CIDR${value.includes(":") ? "6" : ""},${value},${target},no-resolve`;
 
 function expandedRoutes(data) {
-  const routes = data.routes.filter((route) => route.enabled !== false).map((route) => ({ ...route, enabled: undefined, domain_sets: undefined, domains: routeDomains(data, route) }));
+  const routes = data.routes.filter((route) => (route.name === LAN_ROUTE || route.name === IPV4_ROUTE) || route.enabled !== false).map((route) => ({ ...route, enabled: undefined, domain_sets: undefined, domains: routeDomains(data, route) }));
   return [
     ...routes.filter((route) => route.name !== IPV4_ROUTE),
     ...(data.standalone_urls || []).map(expandStandaloneUrl),
@@ -326,7 +326,7 @@ function render() {
     validate(source);
     outputEl.value = outputType === "clash" ? renderClash(source) : renderShadowrocket(source);
     const count = rules(source, "MATCH").length;
-    const enabled = source.routes.filter((route) => route.enabled !== false).length;
+    const enabled = source.routes.filter((route) => (route.name === LAN_ROUTE || route.name === IPV4_ROUTE) || route.enabled !== false).length;
     summaryEl.textContent = `${formatNumber(count)} 条规则 · ${formatNumber(enabled)} 个策略组 · ${formatNumber((source.standalone_urls || []).length)} 个独立网址 · ${formatNumber((source.standalone_rules || []).length)} 个 GeoIP · 浏览器本地生成`;
     generatorStatusEl.textContent = "规则源校验通过"; generatorStatusEl.className = "generator-status";
     outputStatusEl.textContent = "";
@@ -374,6 +374,7 @@ function setupGenerator(data) {
   const isLanRoute = (route) => route.name === LAN_ROUTE;
   const isIpv4Route = (route) => route.name === IPV4_ROUTE;
   const isFixedDirectRoute = (route) => isLanRoute(route) || isIpv4Route(route);
+  data.routes.forEach((route) => { if (isFixedDirectRoute(route)) route.enabled = true; });
   const generatorForm = document.querySelector("#generator");
   const pageSections = [generatorForm, document.querySelector("#results"), document.querySelector("footer")].filter(Boolean);
   const setPageInert = (inert) => pageSections.forEach((section) => { section.inert = inert; });
@@ -405,7 +406,8 @@ function setupGenerator(data) {
       const list = entries.length
         ? `<ul class="base-rule-list">${entries.map(({ kind, value }) => `<li><code>${escapeHtml(value)}</code><small>${escapeHtml(kind)}</small></li>`).join("")}</ul>`
         : `<p class="base-rule-empty">暂无地址</p>`;
-      return `<div class="route-option base-route">${enabledBox(route, index, '<span class="base-route-badge">固定直连</span>')}<em>${routeDescriptions[route.name] || "局域网、保留地址与特殊网段"} · ${formatNumber(entries.length)} 条地址</em>${list}${actions(route, index, "编辑地址列表…")}</div>`;
+      const label = `<div class="base-route-label"><strong>${escapeHtml(route.name)}</strong><span class="base-route-badge">固定直连</span></div>`;
+      return `<div class="route-option base-route">${label}<em>${routeDescriptions[route.name] || "局域网、保留地址与特殊网段"} · ${formatNumber(entries.length)} 条地址</em>${list}${actions(route, index, "编辑地址列表…")}</div>`;
     };
     const routes = data.routes.map((route, index) => ({ route, index }));
     const baseRoutes = routes.filter(({ route }) => isLanRoute(route));
@@ -455,7 +457,10 @@ function setupGenerator(data) {
   renderRoutes();
   const renderStandalone = () => {
     const items = data.standalone_urls || [];
-    document.querySelector("#standalone-options").innerHTML = items.length ? items.map((item, index) => `<div class="standalone-row"><label><span>名称</span><input name="standalone-name-${index}" aria-label="独立网址名称" data-standalone-name="${index}" value="${escapeHtml(item.name)}" placeholder="名称…" autocomplete="off"></label><label><span>域名或 IP/CIDR</span><input name="standalone-domain-${index}" aria-label="域名或 IP/CIDR" data-standalone-domain="${index}" value="${escapeHtml(item.domain)}" placeholder="例如 example.com 或 1.2.3.4/32…" inputmode="url" autocomplete="off" spellcheck="false"></label><label><span>目标节点组</span><select name="standalone-target-${index}" aria-label="目标节点组" data-standalone-target="${index}">${Object.entries(data.targets).map(([key, name]) => `<option value="${escapeHtml(key)}" ${item.target === key ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}</select></label><button type="button" data-remove-standalone="${index}" aria-label="删除独立网址 ${escapeHtml(item.name || "未命名")}">删除</button></div>`).join("") : emptyState("暂无独立网址；可用下方按钮增加一条。 ");
+    const targetOptions = (selected) => Object.entries(data.targets).map(([key, name]) => `<option value="${escapeHtml(key)}" ${selected === key ? "selected" : ""}>${escapeHtml(name)}</option>`).join("");
+    const renderStandaloneRow = (item, index) => `<tr class="standalone-table-row"><td class="standalone-name-cell"><input name="standalone-name-${index}" aria-label="独立网址名称" data-standalone-name="${index}" value="${escapeHtml(item.name)}" placeholder="名称…" autocomplete="off"></td><td class="standalone-domain-cell"><input name="standalone-domain-${index}" aria-label="域名或 IP/CIDR" data-standalone-domain="${index}" value="${escapeHtml(item.domain)}" placeholder="例如 example.com 或 1.2.3.4/32…" inputmode="url" autocomplete="off" spellcheck="false"></td><td class="standalone-target-cell"><select name="standalone-target-${index}" aria-label="目标节点组" data-standalone-target="${index}">${targetOptions(item.target)}</select></td><td class="standalone-action-cell"><button type="button" data-remove-standalone="${index}" aria-label="删除独立网址 ${escapeHtml(item.name || "未命名")}">删除</button></td></tr>`;
+    const standaloneTable = `<div class="standalone-table-wrap"><table class="standalone-table"><caption class="visually-hidden">独立网址列表</caption><thead><tr><th scope="col">名称</th><th scope="col">域名或 IP/CIDR</th><th scope="col">目标节点组</th><th scope="col">操作</th></tr></thead><tbody>${items.map(renderStandaloneRow).join("")}</tbody></table></div>`;
+    document.querySelector("#standalone-options").innerHTML = items.length ? standaloneTable : emptyState("暂无独立网址；可用下方按钮增加一条。 ");
     document.querySelectorAll("[data-standalone-name]").forEach((input) => input.oninput = () => { data.standalone_urls[input.dataset.standaloneName].name = input.value; });
     document.querySelectorAll("[data-standalone-domain]").forEach((input) => input.oninput = () => { data.standalone_urls[input.dataset.standaloneDomain].domain = input.value.trim(); });
     document.querySelectorAll("[data-standalone-target]").forEach((select) => select.onchange = () => { data.standalone_urls[select.dataset.standaloneTarget].target = select.value; });

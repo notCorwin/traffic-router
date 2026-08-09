@@ -186,6 +186,48 @@ h2 { margin: 0; font-size: 18px; line-height: 1.35; letter-spacing: -.01em; }
 .route-table .edit-domains, .route-table .remove-route { margin-top: 0; }
 .route-table .route-row:has(input:not(:checked)) .route-description,
 .route-table .route-row:has(input:not(:checked)) .route-rule-cell { color: var(--faint); }
+.standalone-table-wrap {
+  grid-column: 1 / -1;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.standalone-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.standalone-table th {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+  text-align: left;
+  white-space: nowrap;
+}
+.standalone-table th:nth-child(1) { width: 27%; }
+.standalone-table th:nth-child(2) { width: 42%; }
+.standalone-table th:nth-child(3) { width: 21%; }
+.standalone-table th:nth-child(4) { width: 10%; }
+.standalone-table td {
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+.standalone-table tbody tr:last-child td { border-bottom: 0; }
+.standalone-table tbody tr:hover { background: var(--surface-hover); }
+.standalone-table .standalone-target-cell select { max-width: 280px; }
+.standalone-table .standalone-action-cell { text-align: left; }
+.standalone-table button {
+  min-width: 52px;
+  padding: 7px 9px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--danger);
+}
+.standalone-table button:hover { border-color: #e0a5a0; background: var(--danger-soft); color: var(--danger); }
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -210,6 +252,8 @@ h2 { margin: 0; font-size: 18px; line-height: 1.35; letter-spacing: -.01em; }
 .route-toggle strong { overflow-wrap: anywhere; }
 .route-option strong { font-size: 13px; }
 .route-option em { display: block; min-height: 34px; margin: 6px 0 10px 26px; color: var(--muted); font-size: 11px; font-style: normal; line-height: 1.45; }
+.standalone-table input,
+.standalone-table select,
 .route-table select,
 .route-option select,
 .standalone-row input,
@@ -229,6 +273,8 @@ h2 { margin: 0; font-size: 18px; line-height: 1.35; letter-spacing: -.01em; }
   color: var(--text);
   font: 12px var(--mono);
 }
+.standalone-table input:focus-visible,
+.standalone-table select:focus-visible,
 .route-table select:focus-visible,
 .route-option select:focus-visible,
 .standalone-row input:focus-visible,
@@ -253,20 +299,23 @@ input::placeholder, textarea::placeholder { color: var(--faint); }
 
 .base-rule-section { padding-top: 1px; }
 .base-rule-options { grid-template-columns: 1fr; }
-.base-route em { min-height: 0; }
-.base-route-badge { margin-left: 8px; color: var(--muted); font-size: 11px; font-weight: 500; }
+.base-route { border-color: #7394c3; background: var(--accent-soft); }
+.base-route-label { display: flex; min-height: 24px; align-items: center; gap: 12px; }
+.base-route-label strong { font-size: 13px; }
+.base-route em { min-height: 0; margin: 6px 0 10px; }
+.base-route-badge { color: var(--muted); font-size: 11px; font-weight: 500; }
 .base-rule-list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 0 24px;
-  margin: 0 0 4px 26px;
+  margin: 0 0 4px;
   padding: 0;
   list-style: none;
 }
 .base-rule-list li { display: flex; align-items: baseline; gap: 6px; padding: 6px 0; border-bottom: 1px solid var(--line); }
 .base-rule-list code { font: 11px/1.35 var(--mono); color: var(--text); overflow-wrap: anywhere; }
 .base-rule-list small { color: var(--muted); font-size: 10px; }
-.base-rule-empty { margin: 0 0 4px 26px; color: var(--muted); font-size: 12px; }
+.base-rule-empty { margin: 0 0 4px; color: var(--muted); font-size: 12px; }
 
 details { margin-top: 28px; padding-top: 17px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
 details summary { min-height: 24px; cursor: pointer; color: var(--text); font-weight: 650; }
@@ -389,7 +438,7 @@ a:hover { color: var(--accent-hover); text-decoration-color: var(--accent-hover)
   .route-toggle { min-height: 44px; }
   .loading-skeleton { grid-template-columns: 1fr; }
   .route-toggle input { min-height: 18px; }
-  .route-option select, .route-table select, .standalone-row input, .standalone-row select, .drawer-item input, .drawer-item select, .group-row input, .group-row select, .shared-settings input, .geoip-row select, .dns-card-simple textarea { font-size: 16px; }
+  .route-option select, .route-table select, .standalone-table input, .standalone-table select, .standalone-row input, .standalone-row select, .drawer-item input, .drawer-item select, .group-row input, .group-row select, .shared-settings input, .geoip-row select, .dns-card-simple textarea { font-size: 16px; }
   .route-table-wrap { border: 0; overflow: visible; }
   .route-table { display: block; table-layout: auto; }
   .route-table thead {
@@ -421,6 +470,35 @@ a:hover { color: var(--accent-hover); text-decoration-color: var(--accent-hover)
   .route-table-toggle { justify-content: flex-start; min-height: 44px; }
   .route-table .route-target-cell select { max-width: none; }
   .route-table .route-action-cell .route-actions { gap: 8px; }
+  .standalone-table-wrap { border: 0; overflow: visible; }
+  .standalone-table { display: block; table-layout: auto; }
+  .standalone-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+  .standalone-table tbody { display: grid; gap: 10px; }
+  .standalone-table tr { display: block; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+  .standalone-table td { display: block; padding: 11px 12px; border: 0; }
+  .standalone-table td + td { border-top: 1px solid var(--line); }
+  .standalone-table .standalone-name-cell::before,
+  .standalone-table .standalone-domain-cell::before,
+  .standalone-table .standalone-target-cell::before,
+  .standalone-table .standalone-action-cell::before {
+    display: block;
+    margin-bottom: 5px;
+    color: var(--muted);
+    font-size: 11px;
+  }
+  .standalone-table .standalone-name-cell::before { content: "名称"; }
+  .standalone-table .standalone-domain-cell::before { content: "域名或 IP/CIDR"; }
+  .standalone-table .standalone-target-cell::before { content: "目标节点组"; }
+  .standalone-table .standalone-action-cell::before { content: "操作"; }
+  .standalone-table .standalone-target-cell select { max-width: none; }
+  .standalone-table button { width: 100%; }
   #output { min-height: 400px; font-size: 16px; }
   .shared-settings, .group-row, .standalone-row, .geoip-row, .dns-card-simple { grid-template-columns: 1fr; }
   .group-row label:nth-child(n+2):nth-child(-n+4) { grid-column: auto; }

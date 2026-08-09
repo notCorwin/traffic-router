@@ -53,6 +53,14 @@ const emitted = new Set(app.rules(disabled, "MATCH").map(([, name]) => name));
 assert.ok(!emitted.has(data.routes[0].name), "停用的策略组不该出现在输出里");
 assert.ok(emitted.has(data.routes[1].name), "启用的策略组必须出现");
 
+// 基础直连规则没有启用开关，始终必须出现在输出中
+const disabledBase = fixture();
+disabledBase.routes.find((route) => route.name === "局域网直连").enabled = false;
+disabledBase.routes.find((route) => route.name === "IPv4直连").enabled = false;
+const baseRules = ruleLines(disabledBase);
+assert.ok(baseRules.includes("IP-CIDR,192.168.0.0/16,DIRECT,no-resolve"), "局域网基础规则必须始终启用");
+assert.ok(baseRules.includes(ipv4Rule), "IPv4 基础规则必须始终启用");
+
 // 订阅自带规则必须排在 MATCH 之前，否则永远命中不了
 const main = new Function(`${app.renderClash(data)}\nreturn main;`)();
 const merged = main({ proxies: [{ name: "🇸🇬 SG-01" }], rules: ["DOMAIN,example.com,DIRECT"] });
